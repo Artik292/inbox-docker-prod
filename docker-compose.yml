@@ -1,0 +1,66 @@
+version: "3"
+
+services:
+    redis:
+      container_name: redis
+      image: redis:latest
+      ports:
+          - "6379:6379"
+      command: redis-server --save 20 1 --loglevel warning
+      volumes:
+          - ./data/redis:/data/redis
+      networks:
+          - symfony_app
+    db:
+        container_name: mysql
+        image: mysql:8.0.33
+        platform: linux/x86_64
+        volumes:
+            - "db_app:/var/lib/mysql"
+            - "./data/application/init.sql:/data/application/init.sql"
+        environment:
+            MYSQL_ROOT_PASSWORD: "!ChangeMe!"
+            MYSQL_DATABASE: "app"
+            MYSQL_USER: "app"
+            MYSQL_PASSWORD: "!ChangeMe!"
+        ports:
+            - "3306:3306"
+        networks:
+            - symfony_app
+    php:
+        container_name: php
+        build:
+            context: ./docker/php
+            args:
+                TIMEZONE: "Europe/Riga"
+        volumes:
+            - ./:/var/www/symfony:cached
+            - symfony_app_var:/var/www/symfony/var
+            - symfony_app_vendor:/var/www/symfony/vendor
+        networks:
+            - symfony_app
+        depends_on:
+            - db
+    nginx:
+        build:
+            context: ./docker/nginx
+        volumes:
+            - ./:/var/www/symfony:cached
+            - symfony_app_var:/var/www/symfony/var
+            - symfony_app_vendor:/var/www/symfony/vendor
+        ports:
+            - "80:80"
+        restart: always
+        networks:
+            - symfony_app
+        env_file:
+            - .env
+
+
+volumes:
+    symfony_app_var:
+    symfony_app_vendor:
+    db_app:
+
+networks:
+    symfony_app:
