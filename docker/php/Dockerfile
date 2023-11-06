@@ -1,82 +1,83 @@
-FROM php:8.1-fpm-buster
+# Использование debian:slim как базового образа
+FROM debian:bullseye-slim
+
+# Аргумент для установки временной зоны
 ARG TIMEZONE
 
+RUN apt-get update && apt-get install -y libredis-perl
+
+# Установка необходимых зависимостей
 RUN apt-get update && apt-get install -y \
-    gnupg \
-    g++ \
-    procps \
-    openssl \
-    git \
-    unzip \
-    zlib1g-dev \
-    libzip-dev \
-    libfreetype6-dev \
-    libpng-dev \
-    libjpeg-dev \
-    libicu-dev  \
-    libonig-dev \
-    libxslt1-dev \
-    acl \
-    mariadb-client \
-    && echo 'alias sf="php bin/console"' >> ~/.bashrc
+        autoconf \
+        file \
+        g++ \
+        gcc \
+        libc-dev \
+        make \
+        pkg-config \
+        re2c \
+        curl \
+        libxml2-dev \
+        libsqlite3-dev \
+        libpng-dev \
+        libjpeg-dev \
+        libfreetype6-dev \
+        libonig-dev \
+        libzip-dev \
+        libicu-dev \
+        git \
+        unzip \
+        procps \
+        openssl \
+        zlib1g-dev \
+        libxslt1-dev \
+        mariadb-client \
+        libcurl4-openssl-dev \
+        libssl-dev \
+        php-pear \
+        php-dev
 
-RUN docker-php-ext-configure gd --with-jpeg --with-freetype
+RUN apt-get update && apt-get install -y libmysqlclient-dev
 
-RUN docker-php-ext-install \
-    pdo pdo_mysql zip xsl gd intl opcache exif mbstring
+# Скачивание и установка PHP
+ENV PHP_VERSION 8.1.0
+RUN curl -SL "https://www.php.net/distributions/php-${PHP_VERSION}.tar.xz" -o php.tar.xz \
+    && mkdir -p /usr/src/php \
+    && tar -Jxf php.tar.xz -C /usr/src/php --strip-components=1 \
+    && cd /usr/src/php \
+    && ./buildconf --force \
+    && ./configure --with-config-file-path=/usr/local/etc/php \
+        --with-config-file-scan-dir=/usr/local/etc/php/conf.d \
+        --enable-fpm \
+        --with-openssl \
+        --with-curl \
+        --with-pdo-mysql \
+    && make -j "$(nproc)" \
+    && make install \
+    && make clean
 
-# Set timezone
-RUN ln -snf /usr/share/zoneinfo/${TIMEZONE} /etc/localtime && echo ${TIMEZONE} > /etc/timezone \
-    && printf '[PHP]\ndate.timezone = "%s"\n', ${TIMEZONE} > /usr/local/etc/php/conf.d/tzone.ini \
-    && "date"
+RUN pecl install redis && mkdir /usr/local/etc/php && echo "extension=redis.so" > /usr/local/etc/php/php.ini # docker-php-ext-enable redis
 
-RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
-
-RUN pecl install -o -f redis && rm -rf /tmp/pear && docker-php-ext-enable redis
-
-WORKDIR /var/www/symfony
-
-COPY ../../ /var/www/symfony
-
-COPY ./entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/entrypoint.sh
-
-ENTRYPOINT ["entrypoint.sh"]
+# Копирование конфигурации PHP-FPM по умолчанию
+COPY ./php-fpm.conf /usr/local/etc/
 
 CMD ["php-fpm"]
 
-#CMD bash -c "cd /var/www/symfony && composer install"
-#
-#CMD bash -c "cd /var/www/symfony && php bin/console doctrine:database:drop --if-exists --force"
-#CMD bash -c "cd /var/www/symfony && php bin/console doctrine:database:create"
-#CMD bash -c "cd /var/www/symfony && php bin/console --no-interaction --allow-no-migration doctrine:migrations:migrate"
+# Установка Composer
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
 
-#CMD bash -c "cd /var/www/symfony && composer install; doctrine:migrations:migrate ;  php-fpm"
+# Установка временной зоны
+RUN ln -snf /usr/share/zoneinfo/$TIMEZONE /etc/localtime && echo $TIMEZONE > /etc/timezone
 
-#ARG APP_ENV=prod
-#ENV APP_ENV=${APP_ENV}
+# Копирование исходного кода приложения
+WORKDIR /var/www/symfony
+COPY ../../ /var/www/symfony
 
-#CMD bash -c "rm -rf /var/www/symfony/migrate.sh && echo 'cd /var/www/symfony && php bin/console doctrine:database:drop --if-exists --force && cd /var/www/symfony && php bin/console doctrine:database:create && php bin/console --no-interaction --allow-no-migration doctrine:migrations:migrate' >> /var/www/symfony/migrate.sh && chmod +x /var/www/symfony/migrate.sh"
+# Копирование и настройка точки входа
+COPY ./entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
-#CMD bash -c "cd /var/www/symfony && composer install && /var/www/symfony/migrate.sh"
+# Очистка и минимизация размера образа
+#RUN apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-#CMD bash -c "/var/www/symfony/migrate.sh"
-
-
-
-#CMD bash -c  "sleep 30 && cd /var/www/symfony && php bin/console doctrine:database:drop --force && php bin/console doctrine:database:create && php bin/console --no-interaction --allow-no-migration doctrine:migrations:migrate"
-
-#CMD bash -c  "cd /var/www/symfony && php bin/console doctrine:database:drop --force"
-#
-#CMD bash -c "cd /var/www/symfony && php bin/console doctrine:database:create"
-#
-#CMD bash -c "cd /var/www/symfony && php bin/console --no-interaction --allow-no-migration doctrine:migrations:migrate"
-
-#ENTRYPOINT "sleep 30 && cd /var/www/symfony && php bin/console doctrine:database:drop --force && php bin/console doctrine:database:create && php bin/console --no-interaction --allow-no-migration doctrine:migrations:migrate"
-#ENTRYPOINT ["cd /var/www/symfony && php bin/console doctrine:database:drop --force && php bin/console doctrine:database:create && php bin/console --no-interaction --allow-no-migration doctrine:migrations:migrate"]
-#cd /var/www/symfony php bin/console doctrine:database:drop --force
-#CMD bash -c "rm -rf /var/www/symfony/migrate.sh && echo 'cd /var/www/symfony && php bin/console doctrine:database:drop --force && cd /var/www/symfony && php bin/console doctrine:database:create && php bin/console --no-interaction --allow-no-migration doctrine:migrations:migrate' >> /var/www/symfony/migrate.sh && chmod +x /var/www/symfony/migrate.sh"
-
-#rm -rf /var/www/symfony/migrate.sh && echo 'cd /var/www/symfony php bin/console doctrine:database:drop --force && cd /var/www/symfony && php bin/console doctrine:database:create && php bin/console --no-interaction --allow-no-migration doctrine:migrations:migrate' >> /var/www/symfony/migrate.sh && chmod +x /var/www/symfony/migrate.sh
-
-#ENTRYPOINT ["/bin/bash /var/www/symfony/migrate.sh"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
